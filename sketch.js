@@ -9,6 +9,8 @@ let ampSlider, ampLabel;
 let showAmpSliderCheckbox, showAmpSliderLabel;
 let showAmpSlider = false;
 let speedSlider, speedLabel, sizeSlider, sizeLabel;
+let originX;
+let originY;
 
 
 function setup() {
@@ -108,10 +110,14 @@ function draw() {
     background(bgColorPicker.color());
   } else {
     // Schweif-Effekt
+    originX = mouseX;
+    originY = mouseY;
     let bgCol = color(bgColorPicker.color());
     bgCol.setAlpha(40); // 0 = komplett durchsichtig, 255 = voll sichtbar
     fill(bgCol);
     rect(0, 0, width, height);
+
+    drawSpotlight(originX, originY, 200); // originX/originY = Mittelpunkt
 
 
     // Musikreaktion
@@ -130,8 +136,8 @@ function draw() {
     let dx = cos(angle) * speed;
     let dy = sin(angle) * speed;
     // Startposition leicht variieren
-    let x = width / 2 + random(-20, 20);
-    let y = height / 2 + random(-20, 20);
+    let x = originX + random(-20, 20);
+    let y = originY + random(-20, 20);
     // Farbe leicht variieren
     let baseCol = color(ellipseColorPicker.color());
     baseCol.setRed(red(baseCol) + random(-20, 20));
@@ -144,6 +150,7 @@ function draw() {
 }
 
 
+
     // Bälle updaten und zeichnen
     for (let i = balls.length - 1; i >= 0; i--) {
       balls[i].update();
@@ -153,9 +160,14 @@ function draw() {
       }
     }
   }
+  
   // Im startButton.mousePressed Callback die UI-Elemente für den Slider ausblenden:
-
+drawSpotlight(originX, originY, 200); // originX/originY = Mittelpunkt
 }
+
+
+
+
 function mousePressed() {
   /*if (showStarted) {
     let numBalls = 20;
@@ -167,6 +179,12 @@ function mousePressed() {
       balls.push(new Ball(mouseX, mouseY, dx, dy, ellipseColorPicker.color()));
     }
   }*/
+}
+function drawSpotlight(x, y, r) {
+    noStroke();
+    fill(255, 255, 200, 255);
+    ellipse(x, y, r);
+  
 }
 
 class Ball {
