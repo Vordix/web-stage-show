@@ -6,15 +6,26 @@ let amplitude;
 let lastCircleTime = 0;
 let circleInterval = 100; // Mindestabstand in ms zwischen Kreisen
 let ampSlider, ampLabel;
-let showAmpSliderCheckbox, showAmpSliderLabel;
-let showAmpSlider = false;
+let showRegieModeCheckbox, showRegieModeLabel;
+let showRegieMode = false;
 let speedSlider, speedLabel, sizeSlider, sizeLabel;
 let originX;
 let originY;
 
+let px;
+let py;
 
-function setup() {
+let detector, video, poses = [];
+let useTracking = true; // Zum Umschalten Tracking/Maus
+
+let showVideo = false; // Zum Umschalten Video anzeigen/verstecken
+let showVideoCheckbox, showVideoLabel;
+
+
+
+async function setup() {
   createCanvas(windowWidth, windowHeight);
+  frameRate(30); //cap von 30FPS
 
   // Parameter-UI
   bgColorPicker = createColorPicker('#000004');
@@ -26,6 +37,26 @@ function setup() {
   ellipseColorPicker.position(20, 80);
   spanEllipse = createSpan('Ellipse-Farbe');
   spanEllipse.position(60, 80);
+
+  // Webcam-Video einrichten (versteckt)
+  video = createCapture(VIDEO);
+  video.size(320, 240);
+  if (showVideo == true) {
+    video.show();
+  }else{
+    video.hide();
+  }
+
+
+  originX = width / 2;
+  originY = height / 2;
+
+
+   // Pose-Detection initialisieren
+  detector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.MoveNet,
+    { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+  );
 
   // Ball-Geschwindigkeit
   speedSlider = createSlider(1, 15, 6, 0.1); // min, max, start, step
@@ -48,13 +79,27 @@ function setup() {
   ampLabel = createSpan('Amplitude-Schwelle');
   ampLabel.position(160, 200);
 
-  showAmpSliderCheckbox = createCheckbox('', false);
-  showAmpSliderCheckbox.position(20, 230);
-  showAmpSliderLabel = createSpan('Amplitude-Slider während der Show anzeigen');
-  showAmpSliderLabel.position(50, 230);
+  showRegieModeCheckbox = createCheckbox('', false);
+  showRegieModeCheckbox.position(20, 230);
+  showRegieModeLabel = createSpan('Regie-Modus während der Show anzeigen');
+  showRegieModeLabel.position(50, 230);
 
-  showAmpSliderCheckbox.changed(() => {
-    showAmpSlider = showAmpSliderCheckbox.checked();
+  showRegieModeCheckbox.changed(() => {
+    showRegieMode = showRegieModeCheckbox.checked();
+  });
+
+  showVideoCheckbox = createCheckbox('', false);
+  showVideoCheckbox.position(20, 290);
+  showVideoLabel = createSpan('Video während der Show anzeigen');
+  showVideoLabel.position(50, 290);
+  // Video-Checkbox ändert Sichtbarkeit des Videos
+  showVideoCheckbox.changed(() => {
+    showVideo = showVideoCheckbox.checked();
+    if (showVideo) {
+      video.show();
+    } else {
+      video.hide();
+    }
   });
 
   startButton = createButton('Show starten');
@@ -70,16 +115,18 @@ function setup() {
       spanEllipse.hide();
       infoText.hide();
       musicFileInput.hide();
-      showAmpSliderCheckbox.hide();
-      showAmpSliderLabel.hide();
-        speedSlider.hide();
-        speedLabel.hide();
-        sizeSlider.hide();
-        sizeLabel.hide();
+      showRegieModeCheckbox.hide();
+      showRegieModeLabel.hide();
+      speedSlider.hide();
+      speedLabel.hide();
+      sizeSlider.hide();
+      sizeLabel.hide();
       // Slider nur ausblenden, wenn Checkbox nicht gesetzt ist
-      if (!showAmpSliderCheckbox.checked()) {
+      if (!showRegieModeCheckbox.checked()) {
         ampSlider.hide();
         ampLabel.hide();
+        showVideoCheckbox.hide();
+        showVideoLabel.hide();
       }
       music.play();
     }
@@ -91,6 +138,16 @@ function setup() {
   infoText.style('font-size', '24px');
 
   amplitude = new p5.Amplitude();
+
+  // Video-Tracking starten
+  detectPose();
+}
+
+async function detectPose() {
+  if (video.loadedmetadata) {
+    poses = await detector.estimatePoses(video.elt);
+  }
+  setTimeout(detectPose, 1000 / 12); // 12 FPS
 }
 
 function handleFile(file) {
@@ -106,50 +163,70 @@ function handleFile(file) {
 }
 
 function draw() {
+  // Video anzeigen
+  if (showVideo) {
+    image(video, width/2, 0, width/2, height/2);
+    //image(video, 0, 0, width, height); FULLSCREEN
+  }
+
+  if (showStarted) {
+    let targetX = originX;
+    let targetY = originY;
+
+    if (useTracking && poses.length > 0 && poses[0].keypoints) {
+      let nose = poses[0].keypoints.find(k => k.name === "nose" || k.part === "nose");
+      if (nose && nose.score > 0.3) {
+        // Selfie-Effekt (üblich): X spiegeln
+        px = nose.x / video.width;
+        py = nose.y / video.height;
+        targetX = px * width;
+        targetY = py * height;
+
+        originX = targetX;
+        originY = targetY;
+      }
+    }
+    //originX = lerp(originX, targetX, 0.15);
+    //originY = lerp(originY, targetY, 0.15);
+    originX = constrain(originX, 0, width);
+    originY = constrain(originY, 0, height);
+  }
+
   if (!showStarted) {
     background(bgColorPicker.color());
   } else {
-    // Schweif-Effekt
-    originX = mouseX;
-    originY = mouseY;
     let bgCol = color(bgColorPicker.color());
-    bgCol.setAlpha(40); // 0 = komplett durchsichtig, 255 = voll sichtbar
+    bgCol.setAlpha(40);
     fill(bgCol);
     rect(0, 0, width, height);
 
-    drawSpotlight(originX, originY, 200); // originX/originY = Mittelpunkt
-
+    drawSpotlight((px * width)/2, (py * height)/2, 200);
 
     // Musikreaktion
     if (music && music.isPlaying()) {
       let level = amplitude.getLevel();
       let threshold = ampSlider.value();
       if (level > threshold && millis() - lastCircleTime > circleInterval) {
-  let numBalls = int(random(15, 30)); // Zufällige Anzahl Bälle
-  let minSpeed = speedSlider.value();
-  let maxSpeed = minSpeed + 2;
-  let ballSize = sizeSlider.value();
-  for (let i = 0; i < numBalls; i++) {
-    // Winkel mit Zufallsabweichung
-    let angle = map(i, 0, numBalls, 0, TWO_PI) + random(-0.2, 0.2);
-    let speed = random(minSpeed, maxSpeed);
-    let dx = cos(angle) * speed;
-    let dy = sin(angle) * speed;
-    // Startposition leicht variieren
-    let x = originX + random(-20, 20);
-    let y = originY + random(-20, 20);
-    // Farbe leicht variieren
-    let baseCol = color(ellipseColorPicker.color());
-    baseCol.setRed(red(baseCol) + random(-20, 20));
-    baseCol.setGreen(green(baseCol) + random(-20, 20));
-    baseCol.setBlue(blue(baseCol) + random(-20, 20));
-    balls.push(new Ball(x, y, dx, dy, baseCol, ballSize + random(-10, 10)));
-  }
-  lastCircleTime = millis();
+        let numBalls = int(random(15, 30));
+        let minSpeed = speedSlider.value();
+        let maxSpeed = minSpeed + 2;
+        let ballSize = sizeSlider.value();
+        for (let i = 0; i < numBalls; i++) {
+          let angle = map(i, 0, numBalls, 0, TWO_PI) + random(-0.2, 0.2);
+          let speed = random(minSpeed, maxSpeed);
+          let dx = cos(angle) * speed;
+          let dy = sin(angle) * speed;
+          let x = (width * px)/2 + random(-20, 20);
+          let y = (height * py)/2 + random(-20, 20);
+          let baseCol = color(ellipseColorPicker.color());
+          baseCol.setRed(red(baseCol) + random(-20, 20));
+          baseCol.setGreen(green(baseCol) + random(-20, 20));
+          baseCol.setBlue(blue(baseCol) + random(-20, 20));
+          balls.push(new Ball(x, y, dx, dy, baseCol, ballSize + random(-10, 10)));
+        }
+        lastCircleTime = millis();
+      }
     }
-}
-
-
 
     // Bälle updaten und zeichnen
     for (let i = balls.length - 1; i >= 0; i--) {
@@ -160,12 +237,10 @@ function draw() {
       }
     }
   }
+  drawSpotlight((px * width)/2, (py * height)/2, 200);
+}
   
   // Im startButton.mousePressed Callback die UI-Elemente für den Slider ausblenden:
-drawSpotlight(originX, originY, 200); // originX/originY = Mittelpunkt
-}
-
-
 
 
 function mousePressed() {
@@ -204,7 +279,7 @@ class Ball {
     this.dx *= 0.97;
     this.dy *= 0.97;
     this.radius *= 0.97;
-    this.alpha *= 0.96;
+    this.alpha *= 0.94;
   }
 
   draw() {
